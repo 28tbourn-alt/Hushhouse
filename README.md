@@ -15,10 +15,12 @@ and leave every setting at its default ("Other" framework, no build command).
 
 ## How multiplayer works here
 
-On a normal website, players connect peer-to-peer through PeerJS (its free public signaling
-server at 0.peerjs.com). The player who creates the room is the hub. If they close the page,
-everyone else returns to the title screen and can rejoin with the same code; the first person
-back becomes the new hub.
+Every player sends and receives room updates through two free public relay servers at once
+(broker.emqx.io and broker.hivemq.com), so friends on any network can play together and
+there's no single "hub" player. If the host leaves, the next player takes over automatically.
+
+Hosts can tick "List this room publicly" in the lobby; public rooms show up under
+"Open rooms you can join" on everyone's title screen.
 
 Progress (the level a room has reached, plus each player's coins, items and battery) is
 saved in each player's browser, keyed by the room code.
