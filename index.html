@@ -397,7 +397,7 @@ function saveWallet(){if(code){wallet.charge=Math.round(me.bat);lsSet('hush-pack
 
 /* ---------- state ---------- */
 const me={x:60,y:60,a:0,light:false,bat:100,sta:100,drained:false,ghost:false,hidden:false,run:false,name:'',c:0,j:0,moving:false,tile:-1};
-const freshG=()=>({ph:'lobby',pub:0,rd:0,lv:1,best:1,r:0,co:[],tr:[],tk:[],lu:[],lk:[],nz:{},wu:[],dead:[],rv:{},m:[],bo:0,t0:0,t1:0});
+const freshG=()=>({ph:'lobby',pub:0,iv:{},rd:0,lv:1,best:1,r:0,co:[],tr:[],tk:[],lu:[],lk:[],nz:{},wu:[],dead:[],rv:{},m:[],bo:0,t0:0,t1:0});
 let G=freshG();
 let M=[], code='', inRoom=false, wasHost=true, boNext=40;
 let myTraps=[],myLures=[],itemSeq=0,nz=[0,0,0,0];
@@ -553,7 +553,7 @@ function spawnMe(){
 }
 function startRound(lv){
   const level=Math.max(1,lv|0),info=levelInfo(level);
-  G={ph:'play',pub:G.pub?1:0,rd:(G.rd||0)+1,lv:level,best:Math.max(G.best||1,level),r:0,co:[],tr:[],tk:[],lu:[],lk:[],nz:{},wu:[],dead:[],rv:{},m:[],bo:0,t0:Date.now(),t1:0};
+  G={ph:'play',pub:G.pub?1:0,iv:{},rd:(G.rd||0)+1,lv:level,best:Math.max(G.best||1,level),r:0,co:[],tr:[],tk:[],lu:[],lk:[],nz:{},wu:[],dead:[],rv:{},m:[],bo:0,t0:Date.now(),t1:0};
   ensureMap();
   G.co=map.coins.map(()=>'');
   const far=map.floor.filter(t=>map.dist[t.y][t.x]>map.maxD*.5);
@@ -595,13 +595,15 @@ function hostTick(dt,list){
     if(G.nz[p.peer]!==n[0]){G.nz[p.peer]=n[0];if(Number.isFinite(+n[1])&&Number.isFinite(+n[2]))noises.push({x:+n[1],y:+n[2],r:Math.min(500,+n[3]||200)})}}
   for(const k of Object.keys(G.nz))if(!players.some(p=>p.peer===k))delete G.nz[k];
   // revive
-  const rv={};
+  // a living friend standing with a ghost for two seconds brings them back, with a few safe seconds after
+  const rv={},iv={};
+  for(const k in (G.iv||{})){const v=G.iv[k]-dt;if(v>0&&players.some(p=>p.peer===k))iv[k]=+v.toFixed(2)}
   for(const d of players.filter(p=>!p.alive)){
-    const helped=active.some(p=>Math.hypot(p.x-d.x,p.y-d.y)<36);
-    let v=G.rv[d.peer]||0;v=helped?v+dt/1.6:Math.max(0,v-dt*.8);
-    if(v>=1)G.dead=G.dead.filter(id=>id!==d.peer);else if(v>0)rv[d.peer]=+v.toFixed(2);
+    const helped=active.some(p=>Math.hypot(p.x-d.x,p.y-d.y)<44);
+    let v=G.rv[d.peer]||0;v=helped?v+dt/2:Math.max(0,v-dt*.5);
+    if(v>=1){G.dead=G.dead.filter(id=>id!==d.peer);iv[d.peer]=3}else if(v>0)rv[d.peer]=+v.toFixed(2);
   }
-  G.rv=rv;
+  G.rv=rv;G.iv=iv;
   if(G.r===ALL&&active.some(p=>Math.hypot(p.x-map.exit.x,p.y-map.exit.y)<28)){G.ph='won';G.t1=Date.now();return}
   // blackouts
   if(info.blackout){if(G.bo>0)G.bo=Math.max(0,+(G.bo-dt).toFixed(2));else{boNext-=dt;if(boNext<=0){G.bo=3.5;boNext=30+Math.random()*20}}}
@@ -621,7 +623,7 @@ function monsterTick(mon,idx,dt,alive,noises,info){
       if(Math.abs(angDiff(Math.atan2(dy,dx),p.a))<CONE+.12&&los(p.x,p.y,mon.x,mon.y)){stun=true;break}}
     // sight: a lit flashlight is seen from far away, darkness keeps you hidden
     let best=null,bd=1e9;
-    for(const p of alive){if(p.h)continue;const range=p.l&&!dark?380:p.rn?220:140;const d=Math.hypot(p.x-mon.x,p.y-mon.y);
+    for(const p of alive){if(p.h||(G.iv&&G.iv[p.peer]>0))continue;const range=p.l&&!dark?380:p.rn?220:140;const d=Math.hypot(p.x-mon.x,p.y-mon.y);
       if(d<range&&d<bd&&los(mon.x,mon.y,p.x,p.y)){best=p;bd=d}}
     if(best){mon.mode=MODE.HUNT;mon.last={x:best.x,y:best.y}}
     else if(mon.mode===MODE.HUNT){mon.mode=MODE.SEEK;mon.seek=mon.last;mon.seekT=2.5;mon.path=[]}
@@ -650,10 +652,10 @@ function monsterTick(mon,idx,dt,alive,noises,info){
     if(d>.5){const st=Math.min(d,speed*dt);moveCircle(mon,dx/d*st,dy/d*st,12)}
     const ti=G.tr.findIndex(tp=>Math.hypot(tp[1]-mon.x,tp[2]-mon.y)<18);
     if(ti>=0){G.tr.splice(ti,1);mon.trap=4;mon.mode=MODE.WANDER;mon.wt=null;mon.path=[];disp=MODE.TRAP}
-    else if(!stun&&mon.mode===MODE.HUNT)for(const p of alive){if(p.h||Math.hypot(p.x-mon.x,p.y-mon.y)>=22)continue;
+    else if(!stun&&mon.mode===MODE.HUNT)for(const p of alive){if(p.h||(G.iv&&G.iv[p.peer]>0)||Math.hypot(p.x-mon.x,p.y-mon.y)>=22)continue;
       if(p.w&&!G.wu.includes(p.peer)){G.wu.push(p.peer);mon.pause=2.4;mon.mode=MODE.WANDER;mon.wt=null;mon.path=[];
         const dd=Math.hypot(mon.x-p.x,mon.y-p.y)||1;moveCircle(mon,(mon.x-p.x)/dd*30,(mon.y-p.y)/dd*30,12)}
-      else{G.dead.push(p.peer);mon.pause=1.8;mon.mode=MODE.WANDER;mon.wt=null;mon.path=[]}
+      else{G.dead.push(p.peer);mon.pause=2.8;mon.mode=MODE.WANDER;mon.wt=null;mon.path=[]}
       break}
   }
   G.m[idx]=[Math.round(mon.x),Math.round(mon.y),disp];
@@ -911,7 +913,7 @@ function syncScreens(list,amHost){
 }
 
 /* ---------- client effects on state change ---------- */
-const prev={r:0,ghost:false,modes:[],ph:'lobby',dead:0,rd:-1,coins:0,wu:false,bo:0};
+const prev={r:0,ghost:false,modes:[],ph:'lobby',dead:0,rd:-1,coins:0,wu:false,bo:0,iv:[]};
 let creakTold=false;
 function effects(){
   const nr=popcount(G.r),mine=(G.wu||[]).includes(net.myPeer);
@@ -921,9 +923,11 @@ function effects(){
     if(myCoins>prev.coins){const got=myCoins-prev.coins;wallet.coins+=got;saveWallet();audio.coin();floaters.push({x:me.x,y:me.y-18,s:`+${got}`,t:0})}
     if(mine&&!prev.wu){wallet.charm=Math.max(0,wallet.charm-1);saveWallet();audio.screech();toast('Your bone charm shatters. It recoiled from you.')}
     if(nr>prev.r){audio.chime(nr*2);toast(nr===NRELIC?'Every candle burns. The door has opened. Find it.':`A candle catches. ${NRELIC-nr} remain.`)}
-    if(me.ghost&&!prev.ghost){audio.caught();toast('It took you. Wait here; a friend can bring you back.')}
-    if(!me.ghost&&prev.ghost){audio.revive();toast('You’re back. Keep moving.')}
-    if(G.dead.length>prev.dead&&!(me.ghost&&!prev.ghost)){audio.stinger();toast('Someone was taken. Find their ghost.')}
+    if(me.ghost&&!prev.ghost){audio.caught();toast('It took you. Float to a living friend; staying together for two seconds brings you back.')}
+    if(!me.ghost&&prev.ghost){audio.revive();toast('You’re back! You’re safe for a few seconds. Move.')}
+    const ivk=Object.keys(G.iv||{});
+    if(ivk.some(k=>!prev.iv.includes(k)&&k!==net.myPeer)){audio.revive();toast('Your friend is back on their feet!')}
+    if(G.dead.length>prev.dead&&!(me.ghost&&!prev.ghost)){audio.stinger();toast('A friend was taken! Stand with their ghost for two seconds to bring them back.')}
     if(G.bo>0&&!(prev.bo>0)){audio.blackout();me.light=false;toast('Every light in the house dies.')}
     if(!(G.bo>0)&&prev.bo>0)audio.click();
     monDisp.forEach((m,i)=>{const pm=prev.modes[i];const near=Math.hypot(m.x-me.x,m.y-me.y);
@@ -937,7 +941,7 @@ function effects(){
     if(G.ph==='play'&&prev.ph!=='play'){saveRoomLevel(code,G.lv||1);showIntro(G.lv||1)}
     if(G.ph!=='play')saveWallet();
   }
-  prev.coins=myCoins;prev.wu=mine;prev.r=nr;prev.ghost=me.ghost;prev.modes=monDisp.map(m=>m.mode);prev.ph=G.ph;prev.dead=G.dead.length;prev.bo=G.bo||0;
+  prev.coins=myCoins;prev.wu=mine;prev.r=nr;prev.ghost=me.ghost;prev.modes=monDisp.map(m=>m.mode);prev.ph=G.ph;prev.dead=G.dead.length;prev.bo=G.bo||0;prev.iv=Object.keys(G.iv||{});
 }
 
 /* ---------- rendering ---------- */
@@ -1073,6 +1077,7 @@ function draw(t,list,dt){
     for(const e of ents){
       if(e.ghost){drawGhost(e.x,e.y,t,e.me?.9:.75);const v=G.rv[e.peer];
         if(v){ctx.strokeStyle='#ebe2cd';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,22,-Math.PI/2,-Math.PI/2+v*Math.PI*2);ctx.stroke()}}
+      if(!e.ghost&&!e.h&&G.iv&&G.iv[e.peer]>0){ctx.strokeStyle=`rgba(220,240,230,${.45+Math.sin(t*12)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,17,0,7);ctx.stroke()}
       if(!e.me){ctx.font='12px "IM Fell English", Georgia, serif';ctx.textAlign='center';ctx.fillStyle='rgba(235,226,205,.75)';
         ctx.fillText(e.h?e.n+' (hiding)':e.n,e.x,e.y-20)}
     }
@@ -1095,6 +1100,12 @@ function draw(t,list,dt){
   if(inPlay&&G.ph==='play'&&G.r===ALL&&!me.ghost){const e=map.exit,ex=(e.x-camX)*z,ey=(e.y-camY)*z;
     if(ex<0||ey<0||ex>vw||ey>vh){const a=Math.atan2(ey-vh/2,ex-vw/2),r=Math.min(vw,vh)*.42;ctx.save();ctx.translate(vw/2+Math.cos(a)*r,vh/2+Math.sin(a)*r);ctx.rotate(a);
       ctx.fillStyle='rgba(220,240,230,.8)';ctx.beginPath();ctx.moveTo(14*dpr,0);ctx.lineTo(-8*dpr,-9*dpr);ctx.lineTo(-8*dpr,9*dpr);ctx.closePath();ctx.fill();ctx.restore()}}
+  // arrows: the living see where ghosts are, ghosts see where the living are
+  if(inPlay&&G.ph==='play'){for(const e of ents){if(e.me||(me.ghost?e.ghost:!e.ghost))continue;
+    const ex=(e.x-camX)*z,ey=(e.y-camY)*z;if(ex>=0&&ey>=0&&ex<=vw&&ey<=vh)continue;
+    const a=Math.atan2(ey-vh/2,ex-vw/2),r=Math.min(vw,vh)*.38;ctx.save();ctx.translate(vw/2+Math.cos(a)*r,vh/2+Math.sin(a)*r);ctx.rotate(a);
+    ctx.globalAlpha=.85;ctx.fillStyle=me.ghost?COLORS[e.c%COLORS.length]:'rgb(200,225,230)';
+    ctx.beginPath();ctx.moveTo(12*dpr,0);ctx.lineTo(-7*dpr,-8*dpr);ctx.lineTo(-7*dpr,8*dpr);ctx.closePath();ctx.fill();ctx.restore()}}
   return{fear,near:inPlay&&G.ph==='play'?Math.max(0,1-mDist/320):0,mDist};
 }
 
@@ -1157,7 +1168,12 @@ function frame(now){
         toast(wallet.bat>0?'Your light died. Press R to swap in a spare.':'Your light died. Buy a battery between levels.')}
     }
     const nw=!me.hidden&&!me.ghost&&nearWardrobe();
-    const hint=me.hidden?(touchMode?'Tap Hide to step out':'Press E to step out'):nw?(touchMode?'Tap Hide to get in':'Press E to hide'):'';
+    const myRv=(G.rv||{})[net.myPeer]||0;
+    let ghostNear=null;if(!me.ghost)for(const p of list){if(!p.me&&(G.dead||[]).includes(p.peer)&&Math.hypot((+p.pr.x||0)-me.x,(+p.pr.y||0)-me.y)<70){ghostNear=p;break}}
+    const gname=ghostNear?String(ghostNear.pr.n||'your friend').slice(0,14):'';
+    const hint=me.ghost?(myRv>0?'Coming back… stay close to your friend':'You’re a ghost. Follow the arrows to a living friend')
+      :ghostNear?(((G.rv||{})[ghostNear.peer]||0)>0?`Reviving ${gname}… stay close`:`Stand with ${gname} to revive them`)
+      :me.hidden?(touchMode?'Tap Hide to step out':'Press E to step out'):nw?(touchMode?'Tap Hide to get in':'Press E to hide'):'';
     const he=$('#hint');if(he.textContent!==hint)he.textContent=hint;he.hidden=!hint;
     $('#tHide').classList.toggle('active',me.hidden);
   }else{$('#hint').hidden=true;if(!inRoom||(G.ph==='lobby'&&mapRd===-1))menuWalk(dt)}
@@ -1190,7 +1206,7 @@ function frame(now){
 
   if(inRoom&&G.ph!=='lobby'){
     const nr=popcount(G.r);document.querySelectorAll('#candles i').forEach((el,i)=>el.classList.toggle('on',!!(G.r&(1<<i))));
-    const cap=`Level ${G.lv||1}: `+(me.ghost?'you’re a ghost, stay put for a rescue':me.hidden?'hiding':nr===NRELIC?'the door is open':`${nr} of 5 candles lit`);
+    const cap=`Level ${G.lv||1}: `+(me.ghost?'you’re a ghost, find a living friend':me.hidden?'hiding':nr===NRELIC?'the door is open':`${nr} of 5 candles lit`);
     if($('#cap').textContent!==cap)$('#cap').textContent=cap;
     const iv=$('#inv'),ivs=`Coins: ${wallet.coins}\nBatteries: ${wallet.bat} (R)   Traps: ${wallet.trap} (T)\nMusic boxes: ${wallet.lure} (G)`+(wallet.charm?'\nBone charm ready':'');
     if(iv.textContent!==ivs)iv.textContent=ivs;
